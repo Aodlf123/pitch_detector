@@ -9,7 +9,7 @@ function App() {
   const [graphData, setGraphData] = useState([]);  // 그래프를 그리기 위한 데이터
   const [startTime, setStartTime] = useState(Date.now());  // 녹음 시작 시간
   const [dimensions, setDimensions] = useState({ width: 0, height: 600 });  // 그래프의 크기
-  
+
   // useRef를 사용하여 컴포넌트 생명주기 동안 유지되어야 하는 값들을 저장합니다.
   const audioContextRef = useRef(null);  // Web Audio API의 AudioContext
   const analyserRef = useRef(null);  // 오디오 분석을 위한 AnalyserNode
@@ -34,7 +34,7 @@ function App() {
   // C1부터 C8까지의 주파수를 계산합니다.
 
   //  1부터 8 까지 포함하는 배열 만들고
-  const octaves = Array.from({length: 8}, (_, i) => i + 1);
+  const octaves = Array.from({ length: 8 }, (_, i) => i + 1);
   //  c0 에 2 ** n 곱해서 각 옥타브의 C 의 주파수 값 구함
   const cFrequencies = octaves.map(octave => 16.35 * Math.pow(2, octave));
 
@@ -44,14 +44,14 @@ function App() {
     const maxValue = cFrequencies[7];  // C8의 주파수
     const minPixel = dimensions.height - marginBottom;
     const maxPixel = marginTop;
-    
+
     const logMin = Math.log(minValue);
     const logMax = Math.log(maxValue);
 
     //  로그 값 변화를 픽셀 값에 매핑해줘야 함. 그래서 일단 어떤 비율로 변환할 지 계산하고
     //  (픽셀의 가능 바운더리 / 로그의 가능 바운더리)
     const scale = (maxPixel - minPixel) / (logMax - logMin);
-    
+
     //  최소 픽셀 위치에 이번 주파수의 로그 값을 픽셀 스케일로 변환한 만큼 더해줌
     return minPixel + scale * (Math.log(Math.max(value, minValue)) - logMin);
   }
@@ -93,7 +93,7 @@ function App() {
       try {
         // 사용자의 마이크에 접근합니다.
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        
+
         // AudioContext와 AnalyserNode를 생성합니다.
         audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
         analyserRef.current = audioContextRef.current.createAnalyser();
@@ -105,7 +105,7 @@ function App() {
         // 피치 감지기를 설정합니다.
 
         //  고속 푸리에 변환에 몇 개의 샘플을 사용할 지, 즉, windowsize 를 결정
-        const bufferLength = analyserRef.current.fftSize; 
+        const bufferLength = analyserRef.current.fftSize;
         detectorRef.current = PitchDetector.forFloat32Array(bufferLength);
         const input = new Float32Array(bufferLength);
 
@@ -128,18 +128,40 @@ function App() {
 
             // 명확도가 충분히 높은 경우에만 피치를 업데이트합니다.
             if (clarityResult > 0.85 && pitchResult > 80) {
-              const correctedPitch = pitchResult;
-              //  피치에 대해 가중이동평균 적용 하지만 이전 피치가 0 즉, 끊겼다가 다시 시작되는 입력의 경우에는
-              //  추출한 피치 그대로 피치 갱신
-              if (pitch === 0) {
-                setPitch(correctedPitch);
-              } else {
-                setPitch(curP => {
-                  return 0.5 * curP + 0.5 * correctedPitch;
-                })
+              let correctedPitch = pitchResult;
+
+              // 옥타브 차이를 계산하는 함수
+              function getOctaveDifference(freq1, freq2) {
+                if (freq1 <= 0 || freq2 <= 0) return Infinity;
+                return Math.abs(Math.log2(freq1 / freq2));
               }
-              setClarity(clarityResult);
-              setGraphData(prevData => [...prevData, { time: currentTime, pitch: correctedPitch }].slice(-200));
+
+              // 최대 허용 가능한 옥타브 차이
+              const MAX_ALLOWED_OCTAVE_DIFFERENCE = 0.5;
+
+              // 이전 피치가 0이 아니고 (즉, 이전에 유효한 피치가 있었고)
+              // 현재 피치와 이전 피치의 옥타브 차이가 허용 범위 내라면
+              if (pitch !== 0 && getOctaveDifference(pitchResult, pitch) <= MAX_ALLOWED_OCTAVE_DIFFERENCE) {
+                // 가중 이동 평균 적용
+                correctedPitch = pitch * 0.5 + correctedPitch * 0.5;
+              } else if (pitch !== 0) {
+                // 옥타브 차이가 너무 크면 이전 피치를 유지
+                correctedPitch = pitch;
+              }
+
+              // 새로운 피치가 유효한 범위 내에 있는지 확인 (예: 20Hz ~ 20000Hz)
+              const MIN_VALID_PITCH = 20;
+              const MAX_VALID_PITCH = 20000;
+              if (correctedPitch >= MIN_VALID_PITCH && correctedPitch <= MAX_VALID_PITCH) {
+                setPitch(correctedPitch);
+                setClarity(clarityResult);
+                setGraphData(prevData => [...prevData, { time: currentTime, pitch: correctedPitch }].slice(-200));
+              } else {
+                // 유효하지 않은 피치인 경우 0으로 설정
+                setPitch(0);
+                setClarity(0);
+                setGraphData(prevData => [...prevData, { time: currentTime, pitch: null }].slice(-200));
+              }
             } else {
               setPitch(0);
               setClarity(0);
@@ -221,7 +243,7 @@ function App() {
                       </text>
                     </g>
                   ))}
-                  
+
                   {/* X축 (주석 처리됨)
                   <line x1="0" y1={dimensions.height - marginBottom} x2={graphWidth} y2={dimensions.height - marginBottom} stroke="white" />
                   {[0, 5, 10, 15, 20].map((tick) => (
@@ -233,7 +255,7 @@ function App() {
                     </g>
                   ))} */}
                 </g>
-                
+
                 {/* 피치 데이터를 그래프로 그립니다 */}
                 <g clipPath="url(#graph-area)">
                   <path
