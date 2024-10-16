@@ -127,9 +127,17 @@ function App() {
             const [pitchResult, clarityResult] = detectorRef.current.findPitch(input, audioContextRef.current.sampleRate);
 
             // 명확도가 충분히 높은 경우에만 피치를 업데이트합니다.
-            if (clarityResult > 0.9) {
+            if (clarityResult > 0.85 && pitchResult > 80) {
               const correctedPitch = pitchResult;
-              setPitch(correctedPitch);
+              //  피치에 대해 가중이동평균 적용 하지만 이전 피치가 0 즉, 끊겼다가 다시 시작되는 입력의 경우에는
+              //  추출한 피치 그대로 피치 갱신
+              if (pitch === 0) {
+                setPitch(correctedPitch);
+              } else {
+                setPitch(curP => {
+                  return 0.5 * curP + 0.5 * correctedPitch;
+                })
+              }
               setClarity(clarityResult);
               setGraphData(prevData => [...prevData, { time: currentTime, pitch: correctedPitch }].slice(-200));
             } else {
