@@ -16,10 +16,13 @@ function App() {
   const sourceRef = useRef(null);  // 오디오 입력 소스
   const detectorRef = useRef(null);  // 피치 감지기
   const containerRef = useRef(null);  // 컨테이너 DOM 요소에 대한 참조
+  const pitchRef = useRef(pitch);
 
   const graphMaxDatapoint = 100;  // 그래프에 표시될 최대 데이터 포인트 수
   const marginTop = 20;  // 그래프 상단 여백
   const marginBottom = 20;  // 그래프 하단 여백
+  // 최대 허용 가능한 옥타브 차이
+  const MAX_ALLOWED_OCTAVE_DIFFERENCE = Infinity;
 
   // 주파수를 음계로 변환하는 함수
   function getNote(frequency) {
@@ -87,6 +90,11 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  //  피치 추적용 useEffect 훅
+  useEffect(() => {
+    pitchRef.current = pitch;
+  }, [pitch]);
+
   // 오디오 설정 및 피치 감지를 수행하는 주요 useEffect
   useEffect(() => {
     async function setupAudio() {
@@ -127,7 +135,7 @@ function App() {
             const [pitchResult, clarityResult] = detectorRef.current.findPitch(input, audioContextRef.current.sampleRate);
 
             // 명확도가 충분히 높은 경우에만 피치를 업데이트합니다.
-            if (clarityResult > 0.85 && pitchResult > 80) {
+            if (clarityResult > 0.85 && pitchResult > 40) {
               let correctedPitch = pitchResult;
 
               // 옥타브 차이를 계산하는 함수
@@ -136,17 +144,14 @@ function App() {
                 return Math.abs(Math.log2(freq1 / freq2));
               }
 
-              // 최대 허용 가능한 옥타브 차이
-              const MAX_ALLOWED_OCTAVE_DIFFERENCE = 0.5;
-
               // 이전 피치가 0이 아니고 (즉, 이전에 유효한 피치가 있었고)
               // 현재 피치와 이전 피치의 옥타브 차이가 허용 범위 내라면
-              if (pitch !== 0 && getOctaveDifference(pitchResult, pitch) <= MAX_ALLOWED_OCTAVE_DIFFERENCE) {
+              if (pitchRef.current !== 0 && getOctaveDifference(pitchResult, pitchRef.current) <= MAX_ALLOWED_OCTAVE_DIFFERENCE) {
                 // 가중 이동 평균 적용
-                correctedPitch = pitch * 0.5 + correctedPitch * 0.5;
-              } else if (pitch !== 0) {
+                correctedPitch = pitchRef.current * 0.5 + correctedPitch * 0.5;
+              } else if (pitchRef.current !== 0) {
                 // 옥타브 차이가 너무 크면 이전 피치를 유지
-                correctedPitch = pitch;
+                correctedPitch = pitchRef.current;
               }
 
               // 새로운 피치가 유효한 범위 내에 있는지 확인 (예: 20Hz ~ 20000Hz)
@@ -155,22 +160,22 @@ function App() {
               if (correctedPitch >= MIN_VALID_PITCH && correctedPitch <= MAX_VALID_PITCH) {
                 setPitch(correctedPitch);
                 setClarity(clarityResult);
-                setGraphData(prevData => [...prevData, { time: currentTime, pitch: correctedPitch }].slice(-200));
+                setGraphData(prevData => [...prevData, { time: currentTime, pitch: correctedPitch }].slice(-graphMaxDatapoint));
               } else {
                 // 유효하지 않은 피치인 경우 0으로 설정
                 setPitch(0);
                 setClarity(0);
-                setGraphData(prevData => [...prevData, { time: currentTime, pitch: null }].slice(-200));
+                setGraphData(prevData => [...prevData, { time: currentTime, pitch: null }].slice(-graphMaxDatapoint));
               }
             } else {
               setPitch(0);
               setClarity(0);
-              setGraphData(prevData => [...prevData, { time: currentTime, pitch: null }].slice(-200));
+              setGraphData(prevData => [...prevData, { time: currentTime, pitch: null }].slice(-graphMaxDatapoint));
             }
           } else {
             setPitch(0);
             setClarity(0);
-            setGraphData(prevData => [...prevData, { time: currentTime, pitch: null }].slice(-200));
+            setGraphData(prevData => [...prevData, { time: currentTime, pitch: null }].slice(-graphMaxDatapoint));
           }
         }
 
@@ -272,7 +277,7 @@ function App() {
                       return `${path} M${x1},${y1} L${x2},${y2}`;
                     }, '')}
                     stroke="#FFA500"
-                    strokeWidth="2"
+                    strokeWidth="3.5"
                     fill="none"
                   />
                 </g>
